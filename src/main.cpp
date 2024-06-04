@@ -26,6 +26,7 @@ void setup()
 	pinMode(LED_BUILTIN, OUTPUT);
 	digitalWrite(LED_BUILTIN, HIGH);
 	tft.init();
+	set_brightness(20);
 	tft.setRotation(1);
 	tft.fillScreen((0xFFFF));
 
