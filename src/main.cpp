@@ -5,6 +5,19 @@ TFT_eSPI tft = TFT_eSPI();
 
 #define CALIBRATION_FILE "/calibrationData"
 
+// uses PWM to set brightness between 0 and 100%
+void set_brightness(uint8_t Value)
+{
+	if (Value < 0 || Value > 100)
+	{
+		printf("TFT_SET_BL Error \r\n");
+	}
+	else
+	{
+		analogWrite(TFT_BL, Value * 2.55);
+	}
+}
+
 void setup()
 {
 	uint16_t calibrationData[5];
@@ -68,6 +81,7 @@ void loop()
 
 	if (tft.getTouch(&x, &y))
 	{
+		set_brightness(x * 0.3125);
 
 		tft.setCursor(5, 5, 2);
 		tft.printf("x: %i     ", x);
