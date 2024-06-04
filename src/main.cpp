@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include "secrets.h"
+#include <PubSubClient.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
 TFT_eSPI tft = TFT_eSPI();
@@ -45,6 +48,11 @@ uint16_t keyColor[15] = {TFT_RED, TFT_DARKGREY, TFT_DARKGREEN,
 
 // Invoke the TFT_eSPI button class and create all the button objects
 TFT_eSPI_Button key[15];
+
+WiFiClient wifiClient;
+int wifi_status = WL_IDLE_STATUS;
+
+PubSubClient mqttClient(wifiClient);
 
 // uses PWM to set brightness between 0 and 100%
 void set_brightness(uint8_t Value)
@@ -126,8 +134,90 @@ void draw_keypad()
 	}
 }
 
+void printCurrentNet()
+{
+
+	// print the SSID of the network you're attached to:
+
+	Serial.print("SSID: ");
+
+	Serial.println(WiFi.SSID());
+
+	// print the MAC address of the router you're attached to:
+
+	byte bssid[6];
+
+	WiFi.BSSID(bssid);
+
+	Serial.print("BSSID: ");
+
+	Serial.print(bssid[5], HEX);
+
+	Serial.print(":");
+
+	Serial.print(bssid[4], HEX);
+
+	Serial.print(":");
+
+	Serial.print(bssid[3], HEX);
+
+	Serial.print(":");
+
+	Serial.print(bssid[2], HEX);
+
+	Serial.print(":");
+
+	Serial.print(bssid[1], HEX);
+
+	Serial.print(":");
+
+	Serial.println(bssid[0], HEX);
+
+	// print the received signal strength:
+
+	long rssi = WiFi.RSSI();
+
+	Serial.print("signal strength (RSSI):");
+
+	Serial.println(rssi);
+
+	// print the encryption type:
+
+	byte encryption = WiFi.encryptionType();
+
+	Serial.print("Encryption Type:");
+
+	Serial.println(encryption, HEX);
+
+	Serial.println();
+}
+
+void ensureConnectedToWifi()
+{
+	while (wifi_status != WL_CONNECTED)
+	{
+		Serial.print("Attempting to connect to WPA SSID: ");
+
+		Serial.println(WIFI_SSID);
+
+		// Connect to WPA/WPA2 network:
+		WiFi.setHostname(HOSTNAME);
+		wifi_status = WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+		// wait 5 seconds for connection:
+
+		delay(5000);
+		Serial.println("wifi status: " + String(wifi_status));
+	}
+}
+
 void setup()
 {
+	ensureConnectedToWifi();
+	printCurrentNet();
+
+	mqttClient.setServer(BROKER_ADDRESS, 1883);
+
 	pinMode(LED_BUILTIN, OUTPUT);
 	digitalWrite(LED_BUILTIN, HIGH);
 	tft.init();
@@ -161,8 +251,42 @@ void status(const char *msg)
 	tft.drawString(msg, STATUS_X, STATUS_Y);
 }
 
+void reconnect()
+{
+	// Loop until we're reconnected
+	while (!mqttClient.connected())
+	{
+		Serial.print("Attempting MQTT connection...");
+		// Create a random client ID
+		String clientId = HOSTNAME;
+		clientId += String(random(0xffff), HEX);
+		// Attempt to connect
+		if (mqttClient.connect(clientId.c_str()))
+		{
+			Serial.println("connected");
+		}
+		else
+		{
+			Serial.print("failed, rc=");
+			Serial.print(mqttClient.state());
+			Serial.println(" try again in 5 seconds");
+			// Wait 1 seconds before retrying
+			delay(1000);
+		}
+	}
+}
+
 void loop()
 {
+	// ensure we're connected to the wifi
+	ensureConnectedToWifi();
+
+	if (!mqttClient.connected())
+	{
+		reconnect();
+	}
+	mqttClient.loop();
+
 	uint16_t t_x, t_y;
 	static uint16_t color;
 
@@ -226,6 +350,8 @@ void loop()
 			{
 				status("Sent value to serial port");
 				Serial.println(numberBuffer);
+				String payload = "{\"state\":\"ON\", \"brightness\":" + String(numberBuffer) + "}";
+				mqttClient.publish("underbed-proximity-lights/light/light/command", payload.c_str());
 			}
 			// we dont really check that the text field makes sense
 			// just try to call
