@@ -138,6 +138,10 @@ void draw_keypad()
 void printCurrentNet()
 {
 
+	// print hostname
+	Serial.print("Hostname: ");
+	Serial.println(WiFi.getHostname());
+
 	// print the SSID of the network you're attached to:
 
 	Serial.print("SSID: ");
