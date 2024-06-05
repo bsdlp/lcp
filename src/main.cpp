@@ -200,8 +200,15 @@ void ensureConnectedToWifi()
 
 		Serial.println(WIFI_SSID);
 
-		// Connect to WPA/WPA2 network:
+		// disable low power mode since we're just plugged in
+		WiFi.noLowPowerMode();
+
+// set hostname if HOSTNAME is defined
+#if defined(HOSTNAME)
 		WiFi.setHostname(HOSTNAME);
+#endif
+
+		// Connect to WPA/WPA2 network:
 		wifi_status = WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
 		// wait 5 seconds for connection:
