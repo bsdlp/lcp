@@ -225,6 +225,10 @@ void ensureConnectedToWifi()
 
 void setup()
 {
+	// turn on pin mode to signal we have power, turn off when setup is complete
+	pinMode(LED_BUILTIN, OUTPUT);
+	digitalWrite(LED_BUILTIN, HIGH);
+
 	// connect to wifi
 	ensureConnectedToWifi();
 	printCurrentNet();
@@ -264,9 +268,8 @@ void setup()
 	// configure mqtt
 	mqttClient.setServer(BROKER_ADDRESS, 1883);
 
-	// turn on onboard LED to signal that we've started
-	pinMode(LED_BUILTIN, OUTPUT);
-	digitalWrite(LED_BUILTIN, HIGH);
+	// turn on onboard LED to signal that we've finished setting up
+	digitalWrite(LED_BUILTIN, LOW);
 
 	// initialize TFT
 	tft.init();
