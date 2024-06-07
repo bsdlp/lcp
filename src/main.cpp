@@ -274,7 +274,7 @@ void setup()
 	// initialize TFT
 	tft.init();
 	set_brightness(20);
-	tft.setRotation(2);
+	tft.setRotation(2); // vertical with pins on top
 	touch_calibrate();
 
 	// Clear the screen
