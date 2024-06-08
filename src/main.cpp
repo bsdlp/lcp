@@ -1,10 +1,13 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <WiFi.h>
 #include "secrets.h"
 #include <PubSubClient.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
+#include <stdio.h>
+
 TFT_eSPI tft = TFT_eSPI();
 
 #define CALIBRATION_FILE "/calibrationData2"
@@ -23,14 +26,17 @@ TFT_eSPI tft = TFT_eSPI();
 #define LABEL2_FONT &FreeSansBold12pt7b		 // Key label font 2
 
 // Numeric display box size and location
-#define DISP_X 1
-#define DISP_Y 10
-#define DISP_W 238
-#define DISP_H 50
+#define BAR_PADDING 10
+#define DISP_X BAR_PADDING
+#define DISP_Y BAR_PADDING
+#define DISP_W TFT_WIDTH - (BAR_PADDING * 2) // size of the bar
+#define DISP_H 50														 // height of the bar
 #define DISP_TSIZE 3
 #define DISP_TCOLOR TFT_CYAN
+#define DISP_LIGHTBAR_COLOR TFT_WHITE
 
 // Number length, buffer for storing it and character index
+#define PERCENT_MULTIPLIER (DISP_W - (DISP_X * 2)) / 100
 #define NUM_LEN 12
 char numberBuffer[NUM_LEN + 1] = "";
 uint8_t numberIndex = 0;
@@ -53,10 +59,69 @@ TFT_eSPI_Button key[15];
 WiFiClient wifiClient;
 int wifi_status = WL_IDLE_STATUS;
 
-PubSubClient mqttClient(wifiClient);
+// mqtt callback header
+void mqttCallback(char *topic, byte *payload, unsigned int length);
+
+PubSubClient mqttClient(BROKER_ADDRESS, BROKER_PORT, mqttCallback, wifiClient);
+JsonDocument lightStatus;
+
+// Print something in the mini status bar
+void status(const char *msg)
+{
+	tft.setTextPadding(240);
+	// tft.setCursor(STATUS_X, STATUS_Y);
+	tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+	tft.setTextFont(0);
+	tft.setTextDatum(TC_DATUM);
+	tft.setTextSize(1);
+	tft.drawString(msg, STATUS_X, STATUS_Y);
+}
+
+uint8_t led_brightness_;
+
+void set_led_brightness(uint8_t value)
+{
+	led_brightness_ = value;
+}
+
+const char *led_state_;
+
+void set_led_state(const char *state)
+{
+	led_state_ = state;
+}
+
+void mqttCallback(char *topic, byte *payload, unsigned int length)
+{
+	if (strcmp(topic, STATE_TOPIC) == 0)
+	{
+		// parse the payload
+		DeserializationError error = deserializeJson(lightStatus, (char *)payload);
+		if (error)
+		{
+			Serial.print(F("deserializeJson() failed: "));
+			Serial.println(error.c_str());
+			return;
+		}
+
+		// set the brightness
+		uint8_t brightness_ = lightStatus["brightness"];
+		set_led_brightness(brightness_);
+
+		// set on/off state
+		const char *state = lightStatus["state"];
+		led_state_ = state;
+
+		// update status
+		char status_msg[50];
+		sprintf(status_msg, "State: %s, Brightness: %d%%", led_state_, led_brightness_);
+		Serial.println(status_msg);
+		status(status_msg);
+	}
+}
 
 // uses PWM to set brightness between 0 and 100%
-void set_brightness(uint8_t Value)
+void set_tft_brightness(uint8_t Value)
 {
 	if (Value < 0 || Value > 100)
 	{
@@ -273,7 +338,7 @@ void setup()
 
 	// initialize TFT
 	tft.init();
-	set_brightness(20);
+	set_tft_brightness(20);
 	tft.setRotation(2); // vertical with pins on top
 	touch_calibrate();
 
@@ -281,7 +346,7 @@ void setup()
 	tft.fillScreen(TFT_BLACK);
 
 	// Draw keypad background
-	tft.fillRect(0, 0, 240, 320, TFT_DARKGREY);
+	tft.fillRect(0, 0, 320, 480, TFT_DARKGREY);
 
 	// Draw number display area and frame
 	tft.fillRect(DISP_X, DISP_Y, DISP_W, DISP_H, TFT_BLACK);
@@ -291,19 +356,7 @@ void setup()
 	draw_keypad();
 }
 
-// Print something in the mini status bar
-void status(const char *msg)
-{
-	tft.setTextPadding(240);
-	// tft.setCursor(STATUS_X, STATUS_Y);
-	tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
-	tft.setTextFont(0);
-	tft.setTextDatum(TC_DATUM);
-	tft.setTextSize(1);
-	tft.drawString(msg, STATUS_X, STATUS_Y);
-}
-
-void reconnect()
+void reconnectMqtt()
 {
 	// Loop until we're reconnected
 	while (!mqttClient.connected())
@@ -316,6 +369,7 @@ void reconnect()
 		if (mqttClient.connect(clientId.c_str()))
 		{
 			Serial.println("connected");
+			mqttClient.subscribe(STATE_TOPIC);
 		}
 		else
 		{
@@ -339,7 +393,7 @@ void loop()
 	// ensure we're connected to the mqtt broker
 	if (!mqttClient.connected())
 	{
-		reconnect();
+		reconnectMqtt();
 	}
 	mqttClient.loop();
 
@@ -405,10 +459,10 @@ void loop()
 
 			if (b == 2)
 			{
-				status("Sent value to serial port");
+				status("Sent value");
 				Serial.println(numberBuffer);
 				String payload = "{\"state\":\"ON\", \"brightness\":" + String(numberBuffer) + "}";
-				mqttClient.publish("underbed-proximity-lights/light/light/command", payload.c_str());
+				mqttClient.publish(COMMAND_TOPIC, payload.c_str());
 			}
 			// we dont really check that the text field makes sense
 			// just try to call
